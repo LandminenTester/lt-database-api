@@ -143,8 +143,8 @@ The delivery guarantee is **at least once**.
 * **Maintenance:** a flush before you stop the service is automatic. For a planned database migration call `flush` for each
   namespace first and wait for `remaining: 0`.
 
-## Using it from the lt-database bundle
+## Using it from the lt_database bundle
 
 Nothing changes for callers. `Db.Insert/Update/Upsert/Delete` return a result whose `Json` is the queued receipt when the server
 owner buffers that namespace: check it with `Db.IsQueued(result)`. `Db.Flush(ns, done)` forces a flush, and every write helper
-accepts `immediate: true`. See the lt-database documentation.
+accepts `immediate: true`. See the lt_database documentation.
