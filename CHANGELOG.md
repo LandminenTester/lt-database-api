@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+Update client documentation to use the lt_database bundle identity and its LtDatabase / LtDatabaseClient C# namespaces.
+The HTTP protocol and runtime behavior are unchanged.
+
 ## 0.1.0
 
 Initial public release: signed, namespace-authorized HTTP API for PostgreSQL, MySQL and MongoDB; portable schema sync

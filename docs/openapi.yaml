@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: lt-database-api
-  version: 0.1.0
+  version: 0.1.1
   description: 'Signed JSON API in front of PostgreSQL, MySQL and MongoDB.
 
     Every POST body is a signed envelope; the operation payload is a JSON string inside
