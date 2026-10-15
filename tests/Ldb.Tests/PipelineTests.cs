@@ -22,7 +22,7 @@ public sealed class FakeProvider : IDatabaseProvider
     public Task InitializeAsync(CancellationToken ct) => Task.CompletedTask;
     public Task<bool> PingAsync(CancellationToken ct) => Task.FromResult(true);
     public Task<SyncResult> SyncAsync(string ns, SchemaDefinition desired, bool dryRun, DestructiveMode mode, CancellationToken ct) { Calls.Add("sync:" + ns); return Task.FromResult(new SyncResult(ns, "h", true, dryRun, "planned", [])); }
-    public Task<DescribeResult> DescribeAsync(string ns, CancellationToken ct) => Task.FromResult(new DescribeResult(ns, null, null, null));
+    public Task<DescribeResult> DescribeAsync(string ns, CancellationToken ct) => Task.FromResult(new DescribeResult(ns, "h", RecordingProvider.Players, null));
     public Task<InsertResult> InsertAsync(InsertRequest r, CancellationToken ct) { Calls.Add("insert"); return Task.FromResult(new InsertResult(r.Rows.Count, [1])); }
     public Task<FindResult> FindAsync(FindRequest r, int maxRows, CancellationToken ct) { Calls.Add("find"); return Task.FromResult(new FindResult([], false)); }
     public Task<AffectedResult> UpdateAsync(UpdateRequest r, CancellationToken ct) { Calls.Add("update"); return Task.FromResult(new AffectedResult(1)); }

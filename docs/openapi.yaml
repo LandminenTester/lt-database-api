@@ -62,6 +62,12 @@ paths:
       summary: Delete rows matching a filter
       requestBody: { $ref: "#/components/requestBodies/Envelope" }
       responses: { $ref: "#/components/responses/Standard" }
+  /v1/data/flush:
+    post:
+      summary: Apply queued writes of a namespace now (write-behind mode)
+      description: "Payload: {namespace}. Result: {flushed, deadLettered, remaining, halted, enabled}."
+      requestBody: { $ref: "#/components/requestBodies/Envelope" }
+      responses: { $ref: "#/components/responses/Standard" }
   /v1/data/count:
     post:
       summary: Count rows

@@ -146,6 +146,15 @@ When a proxy terminates TLS, list its address under `Security:TrustedProxies` so
 mTLS between proxy and clients is possible on the proxy; it is optional because the Replay.RE sandbox cannot present a
 client certificate.
 
+## Write-behind files
+
+With the optional [write-behind mode](WRITE-BEHIND.md) and a `JournalPath`, queued writes are stored in that file, and writes the
+database refused for good in `<JournalPath>.dead`. Both contain the row values of the requests. They are as sensitive as the
+database itself: keep them on a volume only the service account can read, include them in your backup policy if the data
+matters, and delete the dead-letter file once handled. Anyone who can write to the journal can inject writes that will be
+applied to the database, so it must not be writable by anyone else. Queued writes are validated when accepted and again by the
+database when applied; permissions of the key (`AllowedNamespaces`, `AllowUnfilteredWrites`) are checked when accepted.
+
 ## Logging and monitoring
 
 Logs are JSON on stdout. Each request produces one `audit` line with key id, address, operation, namespace, status,

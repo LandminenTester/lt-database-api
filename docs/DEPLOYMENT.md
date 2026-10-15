@@ -35,6 +35,7 @@ Settings come from `appsettings.json`, `appsettings.<Environment>.json` and envi
 | `Schema:MaxTables` | `64` | Tables per namespace |
 | `Limits:MaxRows` | `1000` | Rows per `find` |
 | `Limits:MaxInsertRows` | `1000` | Rows per `insert` |
+| `WriteBehind:*` | off | Optional write buffering with scheduled flushes. All settings are listed in [WRITE-BEHIND.md](WRITE-BEHIND.md#turning-it-on) |
 
 Connection string examples:
 
@@ -70,6 +71,12 @@ docker run -d --name ldb --restart unless-stopped --read-only --cap-drop ALL \
   -e LDB_Ldb__Security__TrustedProxies__0=172.17.0.1 \
   -v /etc/ldb/main.secret:/run/secrets/ldb_main:ro \
   ghcr.io/landminentester/lt-database-api:latest
+```
+
+With write-behind and a journal, give the container a writable volume (the image has an empty `/data` owned by the app user):
+
+```bash
+docker run … -v ldb-data:/data   -e LDB_Ldb__WriteBehind__Enabled=true   -e LDB_Ldb__WriteBehind__JournalPath=/data/write-behind.journal …
 ```
 
 ## Reverse proxy with TLS

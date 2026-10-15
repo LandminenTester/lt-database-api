@@ -20,6 +20,7 @@ src/
     RequestPipeline           authentication, authorisation, limits, signing
     Operations                the list of operations and their payload handling
     Security/                 key registry, secret resolver, nonce / rate / idempotency caches
+    Buffering/                optional write-behind: queue, journal file, schedule, background flush
 tests/Ldb.Tests               unit, pipeline and provider-contract tests
 ```
 
@@ -30,6 +31,15 @@ body (bounded), verifies the envelope, runs the operation against the configured
 Providers receive only validated, typed requests. They never see credentials, and the pipeline never sees SQL.
 
 The provider is chosen once at start-up from `Ldb:Database:Provider`.
+
+## Write-behind
+
+`Operations.Write(...)` wraps the four write operations. If the owner enabled write-behind for the namespace and operation,
+`WriteBuffer.EnqueueAsync` validates the request against the stored schema (`Ldb.Core.Query.WriteValidator`), appends it to the
+journal and queues it; otherwise the write goes straight to the provider. `WriteBuffer.FlushAsync` applies the queue in order
+(merging neighbouring inserts), retrying temporary errors and dead-lettering permanent ones. `WriteBufferService` runs the
+schedule (`FlushSchedule.Due`, pure and unit tested) and the final flush on shutdown. The buffer sits in front of
+`IDatabaseProvider`, so it works unchanged for every engine.
 
 ## Design decisions
 

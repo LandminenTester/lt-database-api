@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Ldb.Api.Buffering;
 using Ldb.Core;
 using Ldb.Core.Config;
 using Ldb.Core.Query;
@@ -336,6 +337,34 @@ public abstract class ProviderContract : IAsyncLifetime
         Assert.All(results, r => Assert.Contains(r.Status, new[] { "applied", "unchanged" }));
         Assert.Equal(1, results.Count(r => r.Status == "applied"));
         await Insert(ns, "players", """{"name":"alice"}""");
+    }
+
+    [DockerFact]
+    public async Task Write_behind_applies_queued_writes_in_order_on_flush()
+    {
+        var ns = Ns();
+        await Sync(ns, PlayersV1);
+        var options = new WriteBehindOptions { Enabled = true, FlushIntervalSeconds = 0, FlushThreshold = 0 };
+        var buffer = new WriteBuffer(Db, options, new LimitsOptions(), new MemoryWriteJournal(), TimeProvider.System, NullLogger<WriteBuffer>.Instance);
+        Task Queue(string op, string payload) => buffer.EnqueueAsync(op, ns, payload.Replace("NS", ns), default);
+
+        await Queue("insert", """{"namespace":"NS","table":"players","rows":[{"name":"alice","score":1}]}""");
+        await Queue("insert", """{"namespace":"NS","table":"players","rows":[{"name":"bob","score":2},{"name":"carol","score":3}]}""");
+        await Queue("update", """{"namespace":"NS","table":"players","filter":{"field":"name","op":"eq","value":"alice"},"inc":{"score":5}}""");
+        await Queue("upsert", """{"namespace":"NS","table":"players","row":{"name":"dave","score":9},"keys":["name"]}""");
+        await Queue("delete", """{"namespace":"NS","table":"players","filter":{"field":"name","op":"eq","value":"bob"}}""");
+        // a write that the database will refuse for good (duplicate of a unique value) must not stop the others
+        await Queue("insert", """{"namespace":"NS","table":"players","rows":[{"name":"carol"}]}""");
+        await Queue("update", """{"namespace":"NS","table":"players","filter":{"field":"name","op":"eq","value":"dave"},"set":{"bio":"after the bad one"}}""");
+
+        Assert.Equal(0, (await Db.CountAsync(new CountRequest(ns, "players"), default)).Count); // nothing is visible before the flush
+        var result = await buffer.FlushAsync(ns, default);
+        Assert.Equal(new FlushResult(6, 1, 0, false), result);
+
+        var rows = await Rows(ns, "players", sort: """[{"field":"name"}]""");
+        Assert.Equal(["alice", "carol", "dave"], rows.Select(r => r.GetProperty("name").GetString()));
+        Assert.Equal(6, rows[0].GetProperty("score").GetInt32());
+        Assert.Equal("after the bad one", rows[2].GetProperty("bio").GetString());
     }
 
     [DockerFact]

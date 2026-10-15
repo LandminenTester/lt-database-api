@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Ldb.Api.Buffering;
 using Ldb.Api.Security;
 using Ldb.Core;
 using Ldb.Core.Config;
@@ -17,7 +18,7 @@ namespace Ldb.Api;
 /// </summary>
 public sealed class RequestPipeline(
     IOptions<LdbOptions> options, IDatabaseProvider provider, KeyRegistry keys, NonceCache nonces,
-    MinuteCounter failures, MinuteCounter keyRates, IdempotencyCache idempotency, ILogger<RequestPipeline> logger, TimeProvider time)
+    MinuteCounter failures, MinuteCounter keyRates, IdempotencyCache idempotency, WriteBuffer writeBuffer, ILogger<RequestPipeline> logger, TimeProvider time)
 {
     static readonly Meter Meter = new("Ldb.Api");
     static readonly Counter<long> Requests = Meter.CreateCounter<long>("ldb_requests_total");
@@ -96,7 +97,7 @@ public sealed class RequestPipeline(
 
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
                 timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(5, o.Database.CommandTimeoutSeconds * 4)));
-                var result = await op.Run(env.Payload, new OperationContext(provider, o, key), timeout.Token);
+                var result = await op.Run(env.Payload, new OperationContext(provider, o, key, writeBuffer), timeout.Token);
                 var payload = Json.Write(result);
                 if (cacheKey is not null) idempotency.Store(cacheKey, payloadHash, 200, payload, now.UtcTicks);
                 status = 200;

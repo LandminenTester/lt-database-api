@@ -12,6 +12,8 @@ A machine-readable summary is in [openapi.yaml](openapi.yaml).
   Tables and columns follow the same pattern (36 and 48 characters at most). Double underscores are not allowed.
 * Success is HTTP 200 with `ok: true`. Failures carry `ok: false`, an HTTP status and a payload
   `{"error":{"code":"...","message":"..."}}`.
+* Writes may carry `"durability": "immediate"`. It matters only when the server owner turned on the optional
+  [write-behind mode](WRITE-BEHIND.md): such a write runs live even in a buffered namespace.
 * Writes may carry `"idempotencyKey": "<string>"`. A second request with the same key and the same payload returns the first
   result without writing again; the same key with a different payload returns `422 idempotency_conflict`. Keys are remembered
   for ten minutes.
@@ -31,6 +33,7 @@ A machine-readable summary is in [openapi.yaml](openapi.yaml).
 | `POST /v1/data/upsert` | `upsert` | Insert or update by key |
 | `POST /v1/data/delete` | `delete` | Delete rows |
 | `POST /v1/data/count` | `count` | Count rows |
+| `POST /v1/data/flush` | `flush` | Apply queued writes of a namespace now (only meaningful with [write-behind](WRITE-BEHIND.md)) |
 
 ## Schema
 
@@ -153,6 +156,19 @@ Inserts the row, or updates the other columns of the existing one. Result `{ "af
 
 `{ "namespace", "table", "filter": … }` → `{ "count": n }`.
 
+### `data/flush`
+
+`{ "namespace": "mygame" }`. Applies the namespace's queued writes now and waits for it. Result
+`{ "flushed": n, "deadLettered": m, "remaining": k, "halted": false, "enabled": true }`. Without write-behind it returns
+`enabled: false` and does nothing. The key needs the operation `flush`.
+
+### Queued answers (write-behind only)
+
+When the server owner buffers a namespace, `insert`, `update`, `upsert` and `delete` are validated and answered with
+`{ "queued": true, "id": "…", "pending": 12 }` instead of the results above (no generated ids, no affected counts). Details,
+guarantees and failure handling: [WRITE-BEHIND.md](WRITE-BEHIND.md). `POST /v1/health` then also reports
+`"writeBuffer": { "enabled", "pending", "oldestAgeSeconds", "halted" }`.
+
 ## Errors
 
 | HTTP | `code` | Meaning |
@@ -168,6 +184,7 @@ Inserts the row, or updates the other columns of the existing one. Result `{ "af
 | 409 | `constraint_violation` | Duplicate or missing value, broken reference |
 | 409 | `destructive_denied`, `data_does_not_fit`, `unsupported_change`, `sync_in_progress`, `conflict_retry` | Schema sync refused or busy |
 | 413 | `payload_too_large`, `too_many_rows` | Limits exceeded |
+| 503 | `write_buffer_full`, `write_buffer_unavailable` | Write-behind queue is full or its journal cannot be written; the write was not accepted |
 | 422 | `idempotency_conflict` | Idempotency key reused with another payload |
 | 429 | `rate_limited` | Per-key, per-address or lock-out limit |
 | 500 / 504 | `database_error`, `internal_error`, `database_timeout`, `timeout` | Server side; details are only in the log |

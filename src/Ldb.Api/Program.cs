@@ -1,6 +1,7 @@
 using System.Net;
 using System.Threading.RateLimiting;
 using Ldb.Api;
+using Ldb.Api.Buffering;
 using Ldb.Api.Security;
 using Ldb.Core;
 using Ldb.Core.Config;
@@ -52,10 +53,25 @@ builder.Services.AddSingleton<IDatabaseProvider>(sp =>
         _ => throw new InvalidOperationException($"Unknown Ldb:Database:Provider '{db.Provider}'. Use postgres, mysql or mongodb."),
     };
 });
+builder.Services.AddSingleton<IWriteJournal>(sp =>
+{
+    var wb = sp.GetRequiredService<IOptions<LdbOptions>>().Value.WriteBehind;
+    return wb.Enabled && !string.IsNullOrWhiteSpace(wb.JournalPath) ? new FileWriteJournal(wb.JournalPath, wb.JournalFsync) : new MemoryWriteJournal();
+});
+builder.Services.AddSingleton(sp =>
+{
+    var o = sp.GetRequiredService<IOptions<LdbOptions>>().Value;
+    // Fail at start-up, not at the first scheduled flush, if the schedule is misconfigured.
+    if (o.WriteBehind.Enabled) { FlushSchedule.ParseTimes(o.WriteBehind.FlushAt); FlushSchedule.Zone(o.WriteBehind.TimeZone); }
+    var buffer = new WriteBuffer(sp.GetRequiredService<IDatabaseProvider>(), o.WriteBehind, o.Limits, sp.GetRequiredService<IWriteJournal>(), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<WriteBuffer>>());
+    if (o.WriteBehind.Enabled) buffer.Recover();
+    return buffer;
+});
+builder.Services.AddHostedService<WriteBufferService>();
 builder.Services.AddSingleton(sp => new RequestPipeline(
     sp.GetRequiredService<IOptions<LdbOptions>>(), sp.GetRequiredService<IDatabaseProvider>(), sp.GetRequiredService<KeyRegistry>(),
     sp.GetRequiredService<NonceCache>(), sp.GetRequiredKeyedService<MinuteCounter>("failures"), sp.GetRequiredKeyedService<MinuteCounter>("keyrates"),
-    sp.GetRequiredService<IdempotencyCache>(), sp.GetRequiredService<ILogger<RequestPipeline>>(), sp.GetRequiredService<TimeProvider>()));
+    sp.GetRequiredService<IdempotencyCache>(), sp.GetRequiredService<WriteBuffer>(), sp.GetRequiredService<ILogger<RequestPipeline>>(), sp.GetRequiredService<TimeProvider>()));
 
 // Per-address limit for everything, including unauthenticated calls.
 builder.Services.AddRateLimiter(r =>

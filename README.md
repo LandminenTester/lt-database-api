@@ -25,6 +25,7 @@ program that can send an HTTP POST and compute an HMAC can use it.
 | The sandbox has no database driver, only `HTTP GET/POST` | One POST endpoint per operation, JSON in and out |
 | You do not want three code paths for three databases | One schema format and one query format, translated per engine |
 | Exposing a database-backed API is risky | Every request is HMAC-signed, replay-protected, authorized per key and per namespace, and every response is signed too |
+| Many small writes slow a game tick down | Optional [write-behind mode](docs/WRITE-BEHIND.md): journaled, validated, applied in batches at an interval or fixed times of day |
 | Schemas drift when the program changes | `schema/sync` diffs the declared schema against the last applied one and applies the difference, safely |
 
 ## Quick start
@@ -94,6 +95,7 @@ with the prefix `LDB_` and `__` as separator (`LDB_Ldb__Database__Provider=mysql
 | Document | Contents |
 |---|---|
 | [docs/API.md](docs/API.md) | Every endpoint, request and response shape, the filter language, error codes |
+| [docs/WRITE-BEHIND.md](docs/WRITE-BEHIND.md) | The optional write-behind mode: queue writes and apply them at an interval or at fixed times |
 | [docs/SCHEMA.md](docs/SCHEMA.md) | Portable column types, how they map to each engine, how schema sync decides and what it will not do |
 | [docs/SECURITY.md](docs/SECURITY.md) | The signing protocol, threat model, hardening checklist, database privileges, key rotation |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, Windows service, systemd, reverse proxy with TLS, configuration reference, backups, monitoring |
