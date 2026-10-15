@@ -1,0 +1,9 @@
+**/bin
+**/obj
+.git
+.github
+.env
+*.secret
+tests
+docs
+tools

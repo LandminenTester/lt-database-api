@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-linux:
+    name: Build and test (Linux, all three databases)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build -c Release
+      # The provider contract tests start PostgreSQL, MySQL and MongoDB in containers.
+      - run: dotnet test -c Release --no-build --logger "console;verbosity=normal"
+
+  test-windows:
+    name: Build and unit tests (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build -c Release
+      - run: dotnet test -c Release --no-build
+        env:
+          LDB_SKIP_DOCKER: "1"
+
+  publish-native:
+    name: Native single-file builds
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rid: [linux-x64, linux-arm64, win-x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet publish src/Ldb.Api -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o out/${{ matrix.rid }}
+      - run: ls -la out/${{ matrix.rid }}
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f docker/Dockerfile -t ldb:ci .
+      - name: Smoke test (starts, refuses to run without a key, then answers health checks)
+        run: |
+          set +e
+          docker run --rm ldb:ci 2>&1 | tail -n 5 | grep -q "No API key is configured" || { echo "expected a refusal without keys"; exit 1; }
+          set -e
+          docker run -d --name ldb --read-only --tmpfs /tmp -p 18080:8080 \
+            -e LDB_Ldb__Database__Provider=postgres \
+            -e LDB_Ldb__Database__DmlConnectionString='Host=127.0.0.1;Database=x;Username=x;Password=x' \
+            -e LDB_Ldb__Security__AllowInsecureHttp=true \
+            -e LDB_Ldb__Security__Keys__0__KeyId=ci \
+            -e LDB_Ldb__Security__Keys__0__Current=env:CI_KEY \
+            -e LDB_Ldb__Security__Keys__0__AllowedNamespaces__0='*' \
+            -e CI_KEY=ci-secret-ci-secret-ci-secret-ci-secret \
+            ldb:ci
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:18080/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:18080/v1/health
+          docker logs ldb
+          docker rm -f ldb

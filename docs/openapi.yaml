@@ -1,0 +1,182 @@
+openapi: 3.1.0
+info:
+  title: lt-database-api
+  version: 1.0.0
+  description: |
+    Signed JSON API in front of PostgreSQL, MySQL and MongoDB.
+    Every POST body is a signed envelope; the operation payload is a JSON string inside it.
+    The signing rules are in docs/SECURITY.md.
+servers:
+  - url: https://db.example.com
+paths:
+  /v1/health:
+    get:
+      summary: Liveness and server time (no authentication)
+      responses:
+        "200":
+          description: Server is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+                  time: { type: integer, description: Unix time in seconds }
+    post:
+      summary: Authenticated health check (provider and database reachability)
+      requestBody: { $ref: "#/components/requestBodies/Envelope" }
+      responses: { $ref: "#/components/responses/Standard" }
+  /v1/schema/sync:
+    post:
+      summary: Apply a declared schema to a namespace
+      description: "Payload: SyncRequest. Result payload: SyncResult."
+      requestBody: { $ref: "#/components/requestBodies/Envelope" }
+      responses: { $ref: "#/components/responses/Standard" }
+  /v1/schema/describe:
+    post:
+      summary: Return the stored schema of a namespace
+      requestBody: { $ref: "#/components/requestBodies/Envelope" }
+      responses: { $ref: "#/components/responses/Standard" }
+  /v1/data/insert:
+    post:
+      summary: Insert rows
+      requestBody: { $ref: "#/components/requestBodies/Envelope" }
+      responses: { $ref: "#/components/responses/Standard" }
+  /v1/data/find:
+    post:
+      summary: Query rows
+      requestBody: { $ref: "#/components/requestBodies/Envelope" }
+      responses: { $ref: "#/components/responses/Standard" }
+  /v1/data/update:
+    post:
+      summary: Change rows matching a filter
+      requestBody: { $ref: "#/components/requestBodies/Envelope" }
+      responses: { $ref: "#/components/responses/Standard" }
+  /v1/data/upsert:
+    post:
+      summary: Insert a row or update the existing one with the same key
+      requestBody: { $ref: "#/components/requestBodies/Envelope" }
+      responses: { $ref: "#/components/responses/Standard" }
+  /v1/data/delete:
+    post:
+      summary: Delete rows matching a filter
+      requestBody: { $ref: "#/components/requestBodies/Envelope" }
+      responses: { $ref: "#/components/responses/Standard" }
+  /v1/data/count:
+    post:
+      summary: Count rows
+      requestBody: { $ref: "#/components/requestBodies/Envelope" }
+      responses: { $ref: "#/components/responses/Standard" }
+components:
+  requestBodies:
+    Envelope:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/RequestEnvelope" }
+  responses:
+    Standard:
+      description: A response envelope. Success is 200; failures use the status of the error.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ResponseEnvelope" }
+  schemas:
+    RequestEnvelope:
+      type: object
+      required: [v, kid, ts, nonce, payload, sig]
+      properties:
+        v: { type: integer, enum: [1] }
+        kid: { type: string, description: Key id }
+        ts: { type: integer, description: Unix time in seconds }
+        nonce: { type: string, minLength: 8, maxLength: 64, description: Unique per request }
+        payload: { type: string, description: The operation's JSON, as a string; signed byte for byte }
+        sig: { type: string, description: "base64url(HMAC-SHA256(secret, 'v1\\n' + path + '\\n' + kid + '\\n' + ts + '\\n' + nonce + '\\n' + payload))" }
+    ResponseEnvelope:
+      type: object
+      required: [v, ok, status, payload]
+      properties:
+        v: { type: integer }
+        ok: { type: boolean }
+        status: { type: integer }
+        payload: { type: string, description: JSON string with the result or {"error":{"code","message"}} }
+        sig: { type: string, description: "base64url(HMAC-SHA256(secret, 'v1resp\\n' + requestNonce + '\\n' + status + '\\n' + payload)); absent on unauthenticated errors" }
+        code: { type: string }
+    ColumnType:
+      type: string
+      enum: [int32, int64, decimal, float64, bool, string, text, json, datetime, date, uuid, bytes]
+    Filter:
+      description: A condition or an and/or/not group.
+      oneOf:
+        - type: object
+          required: [field, op]
+          properties:
+            field: { type: string }
+            op: { type: string, enum: [eq, ne, gt, gte, lt, lte, in, nin, isNull, startsWith, contains] }
+            value: {}
+        - type: object
+          properties:
+            and: { type: array, items: { $ref: "#/components/schemas/Filter" } }
+            or: { type: array, items: { $ref: "#/components/schemas/Filter" } }
+            not: { $ref: "#/components/schemas/Filter" }
+    Column:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string }
+        type: { $ref: "#/components/schemas/ColumnType" }
+        length: { type: integer }
+        precision: { type: integer }
+        scale: { type: integer }
+        nullable: { type: boolean, default: false }
+        default: {}
+        unique: { type: boolean, default: false }
+        autoIncrement: { type: boolean, default: false }
+        renamedFrom: { type: string }
+    Table:
+      type: object
+      required: [name, columns]
+      properties:
+        name: { type: string }
+        primaryKey: { type: array, items: { type: string } }
+        columns: { type: array, items: { $ref: "#/components/schemas/Column" } }
+        indexes:
+          type: array
+          items:
+            type: object
+            required: [name, columns]
+            properties:
+              name: { type: string }
+              columns: { type: array, items: { type: string } }
+              unique: { type: boolean }
+        renamedFrom: { type: string }
+    SyncRequest:
+      type: object
+      required: [namespace, schema]
+      properties:
+        namespace: { type: string }
+        dryRun: { type: boolean }
+        schema:
+          type: object
+          required: [tables]
+          properties:
+            tables: { type: array, items: { $ref: "#/components/schemas/Table" } }
+    SyncResult:
+      type: object
+      properties:
+        namespace: { type: string }
+        hash: { type: string }
+        changed: { type: boolean }
+        dryRun: { type: boolean }
+        status: { type: string, enum: [unchanged, planned, applied, denied] }
+        plan:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string }
+              table: { type: string }
+              column: { type: string }
+              newName: { type: string }
+              index: { type: string }
+              note: { type: string }
+              destructive: { type: boolean }

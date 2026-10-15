@@ -1,0 +1,76 @@
+# Local testing only: plain HTTP, throw-away databases, example credentials from .env.
+# Production: see docs/DEPLOYMENT.md (your own database, TLS in front, secrets from files).
+#
+#   docker compose --profile postgres up --build     (or mysql / mongodb)
+
+x-api: &api
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  ports:
+    - "127.0.0.1:8080:8080"
+  read_only: true
+  tmpfs: [ /tmp ]
+  cap_drop: [ALL]
+  security_opt: [ "no-new-privileges:true" ]
+  environment: &api-env
+    LDB_Ldb__Security__AllowInsecureHttp: "true"
+    LDB_Ldb__Security__Keys__0__KeyId: main
+    LDB_Ldb__Security__Keys__0__Current: env:LDB_KEY_MAIN
+    LDB_Ldb__Security__Keys__0__AllowedNamespaces__0: "*"
+    LDB_KEY_MAIN: ${LDB_KEY_MAIN:?copy .env.example to .env first}
+
+services:
+  api-postgres:
+    <<: *api
+    profiles: [postgres]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      <<: *api-env
+      LDB_Ldb__Database__Provider: postgres
+      LDB_Ldb__Database__DmlConnectionString: "Host=postgres;Database=ldb;Username=ldb;Password=${DB_PASSWORD:?}"
+  postgres:
+    profiles: [postgres]
+    image: postgres:17-alpine
+    environment: { POSTGRES_DB: ldb, POSTGRES_USER: ldb, POSTGRES_PASSWORD: "${DB_PASSWORD:?}" }
+    healthcheck: { test: [ "CMD-SHELL", "pg_isready -U ldb -d ldb" ], interval: 3s, timeout: 3s, retries: 20 }
+    volumes: [ "postgres-data:/var/lib/postgresql/data" ]
+
+  api-mysql:
+    <<: *api
+    profiles: [mysql]
+    depends_on:
+      mysql: { condition: service_healthy }
+    environment:
+      <<: *api-env
+      LDB_Ldb__Database__Provider: mysql
+      LDB_Ldb__Database__DmlConnectionString: "Server=mysql;Database=ldb;User ID=ldb;Password=${DB_PASSWORD:?}"
+  mysql:
+    profiles: [mysql]
+    image: mysql:8.4
+    environment: { MYSQL_DATABASE: ldb, MYSQL_USER: ldb, MYSQL_PASSWORD: "${DB_PASSWORD:?}", MYSQL_ROOT_PASSWORD: "${DB_PASSWORD:?}" }
+    healthcheck: { test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uldb", "-p${DB_PASSWORD}" ], interval: 5s, timeout: 5s, retries: 30 }
+    volumes: [ "mysql-data:/var/lib/mysql" ]
+
+  api-mongodb:
+    <<: *api
+    profiles: [mongodb]
+    depends_on:
+      mongodb: { condition: service_healthy }
+    environment:
+      <<: *api-env
+      LDB_Ldb__Database__Provider: mongodb
+      LDB_Ldb__Database__MongoDatabase: ldb
+      LDB_Ldb__Database__DmlConnectionString: "mongodb://ldb:${DB_PASSWORD:?}@mongodb:27017/?authSource=admin"
+  mongodb:
+    profiles: [mongodb]
+    image: mongo:8.0
+    environment: { MONGO_INITDB_ROOT_USERNAME: ldb, MONGO_INITDB_ROOT_PASSWORD: "${DB_PASSWORD:?}" }
+    healthcheck: { test: [ "CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')" ], interval: 5s, timeout: 5s, retries: 20 }
+    volumes: [ "mongo-data:/data/db" ]
+
+volumes:
+  postgres-data:
+  mysql-data:
+  mongo-data:

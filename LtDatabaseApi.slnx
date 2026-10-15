@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ldb.Api/Ldb.Api.csproj" />
+    <Project Path="src/Ldb.Core/Ldb.Core.csproj" />
+    <Project Path="src/Ldb.Providers.Mongo/Ldb.Providers.Mongo.csproj" />
+    <Project Path="src/Ldb.Providers.MySql/Ldb.Providers.MySql.csproj" />
+    <Project Path="src/Ldb.Providers.Postgres/Ldb.Providers.Postgres.csproj" />
+    <Project Path="src/Ldb.Providers.Sql/Ldb.Providers.Sql.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ldb.Tests/Ldb.Tests.csproj" />
+  </Folder>
+</Solution>

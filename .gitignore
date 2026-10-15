@@ -1,0 +1,14 @@
+bin/
+obj/
+out/
+publish/
+.vs/
+.idea/
+*.user
+*.suo
+TestResults/
+coverage/
+.env
+*.secret
+appsettings.Production.json
+appsettings.Local.json
