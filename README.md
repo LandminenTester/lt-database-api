@@ -1,5 +1,7 @@
 # lt-database-api
 
+[![CI](https://github.com/LandminenTester/lt-database-api/actions/workflows/ci.yml/badge.svg)](https://github.com/LandminenTester/lt-database-api/actions/workflows/ci.yml)
+
 A small, security-first HTTP API that sits in front of **PostgreSQL**, **MySQL / MariaDB** or **MongoDB** and gives
 trusted clients one simple, engine-independent way to:
 
@@ -96,7 +98,7 @@ with the prefix `LDB_` and `__` as separator (`LDB_Ldb__Database__Provider=mysql
 | [docs/SECURITY.md](docs/SECURITY.md) | The signing protocol, threat model, hardening checklist, database privileges, key rotation |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, Windows service, systemd, reverse proxy with TLS, configuration reference, backups, monitoring |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the code is organised and how to add a database engine |
-| [docs/BUNDLE-INTEGRATION.md](docs/BUNDLE-INTEGRATION.md) | Writing your own client; using it from a Replay.RE BlackICE bundle |
+| [docs/BUNDLE-INTEGRATION.md](docs/BUNDLE-INTEGRATION.md) | Writing your own client; using it from a Replay.RE BlackICE bundle (companion bundle: [westwood_database](https://github.com/LandminenTester/westwood_database)) |
 | [docs/openapi.yaml](docs/openapi.yaml) | OpenAPI 3.1 description of the endpoints |
 
 ## Security in one paragraph
