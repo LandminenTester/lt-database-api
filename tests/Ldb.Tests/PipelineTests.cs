@@ -19,11 +19,13 @@ public sealed class FakeProvider : IDatabaseProvider
 {
     public string Name => "fake";
     public List<string> Calls { get; } = [];
+    public Action? BeforeInsert { get; set; }
+    public SchemaDefinition Schema { get; set; } = RecordingProvider.Players;
     public Task InitializeAsync(CancellationToken ct) => Task.CompletedTask;
     public Task<bool> PingAsync(CancellationToken ct) => Task.FromResult(true);
-    public Task<SyncResult> SyncAsync(string ns, SchemaDefinition desired, bool dryRun, DestructiveMode mode, CancellationToken ct) { Calls.Add("sync:" + ns); return Task.FromResult(new SyncResult(ns, "h", true, dryRun, "planned", [])); }
-    public Task<DescribeResult> DescribeAsync(string ns, CancellationToken ct) => Task.FromResult(new DescribeResult(ns, "h", RecordingProvider.Players, null));
-    public Task<InsertResult> InsertAsync(InsertRequest r, CancellationToken ct) { Calls.Add("insert"); return Task.FromResult(new InsertResult(r.Rows.Count, [1])); }
+    public Task<SyncResult> SyncAsync(string ns, SchemaDefinition desired, bool dryRun, DestructiveMode mode, CancellationToken ct) { Calls.Add("sync:" + ns); if (!dryRun) Schema = desired; return Task.FromResult(new SyncResult(ns, "h", true, dryRun, "planned", [])); }
+    public Task<DescribeResult> DescribeAsync(string ns, CancellationToken ct) => Task.FromResult(new DescribeResult(ns, "h", Schema, null));
+    public Task<InsertResult> InsertAsync(InsertRequest r, CancellationToken ct) { BeforeInsert?.Invoke(); Calls.Add("insert"); return Task.FromResult(new InsertResult(r.Rows.Count, [1])); }
     public Task<FindResult> FindAsync(FindRequest r, int maxRows, CancellationToken ct) { Calls.Add("find"); return Task.FromResult(new FindResult([], false)); }
     public Task<AffectedResult> UpdateAsync(UpdateRequest r, CancellationToken ct) { Calls.Add("update"); return Task.FromResult(new AffectedResult(1)); }
     public Task<AffectedResult> UpsertAsync(UpsertRequest r, CancellationToken ct) { Calls.Add("upsert"); return Task.FromResult(new AffectedResult(1)); }

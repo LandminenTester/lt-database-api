@@ -99,8 +99,18 @@ A flush applies waiting writes **in the order they were accepted**. It runs
 * before an immediate write of that namespace,
 * when the service shuts down gracefully (up to `ShutdownFlushSeconds`).
 
-Consecutive inserts into the same table are merged into one database call (up to `Limits:MaxInsertRows` rows), which is where
-most of the saving comes from.
+Consecutive inserts into the same table are merged into one database call on SQL providers (up to `Limits:MaxInsertRows`
+rows). MongoDB keeps separate queued requests separate: ordered bulk inserts may partially succeed, so splitting and
+replaying a failed merged batch could repeat already-applied writes. An individual multi-row MongoDB request can still
+partially succeed on a database error.
+
+For **fixed times only**, set `FlushIntervalSeconds: 0` and `FlushThreshold: 0`. Otherwise those triggers can apply writes
+before the configured clock time. Namespace requests are serialized while buffering is enabled so concurrent writes
+cannot enter between a schema change's drain and the actual schema change.
+
+If a required flush halts, schema changes, immediate writes and `FlushBeforeRead` reads return `503 write_buffer_halted`
+instead of overtaking pending writes. Fix the failing write/database and retry the flush. The explicit flush endpoint
+itself returns its signed report; inspect `halted` and `remaining`.
 
 Reads (`find`, `count`) always see only what has been applied. That is the point of the mode; turn on `FlushBeforeRead` if a
 namespace needs read-your-writes.

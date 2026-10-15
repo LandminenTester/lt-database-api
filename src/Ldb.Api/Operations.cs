@@ -35,8 +35,10 @@ public static class Operations
             var ns = Names.Namespace(r.Namespace);
             var normalized = SchemaValidator.Normalize(r.Schema, c.Options.Schema.MaxTables);
             // Structure changes always run live, but writes waiting for the old structure must be applied first.
-            if (c.Buffer is { Enabled: true } b && !r.DryRun) await b.FlushAsync(ns, ct);
-            return await c.Provider.SyncAsync(ns, normalized, r.DryRun, c.Options.Schema.DestructiveMode, ct);
+            if (c.Buffer is { Enabled: true } b && !r.DryRun) await b.DrainAsync(ns, ct);
+            var result = await c.Provider.SyncAsync(ns, normalized, r.DryRun, c.Options.Schema.DestructiveMode, ct);
+            if (!r.DryRun) c.Buffer?.InvalidateSchema(ns);
+            return result;
         }),
         new("schema.describe", "/v1/schema/describe", false, async (p, c, ct) => await c.Provider.DescribeAsync(Json.Parse<DescribeRequest>(p).Namespace, ct)),
         new("insert", "/v1/data/insert", true, Write("insert", async (p, c, ct) =>
@@ -80,14 +82,14 @@ public static class Operations
                 return await buffer.EnqueueAsync(name, info.Namespace, p, ct);
             }
             // An immediate write must not overtake older writes of the same namespace that are still queued.
-            if (info.Namespace is not null && c.Buffer is { Enabled: true } b && b.Pending(info.Namespace) > 0) await b.FlushAsync(info.Namespace, ct);
+            if (info.Namespace is not null && c.Buffer is { Enabled: true } b && b.Pending(info.Namespace) > 0) await b.DrainAsync(info.Namespace, ct);
             if (name is "update" or "delete") RequireUnfilteredPermission(c, info.All);
             return await live(p, c, ct);
         };
 
     static async Task FlushBeforeRead(string payload, OperationContext c, CancellationToken ct)
     {
-        if (c.Buffer is { FlushBeforeRead: true } b && NamespaceOf(payload) is { } ns && b.Pending(ns) > 0) await b.FlushAsync(ns, ct);
+        if (c.Buffer is { FlushBeforeRead: true } b && NamespaceOf(payload) is { } ns && b.Pending(ns) > 0) await b.DrainAsync(ns, ct);
     }
 
     static void RequireUnfilteredPermission(OperationContext c, bool all)

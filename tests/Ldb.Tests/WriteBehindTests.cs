@@ -20,7 +20,7 @@ public sealed class RecordingProvider : IDatabaseProvider
       {"name":"bio","type":"text","nullable":true}]}]}
     """));
 
-    public string Name => "recording";
+    public string Name { get; set; } = "recording";
     public List<string> Calls { get; } = [];
     public SchemaDefinition? Schema { get; set; } = Players;
     /// <summary>Called before each write with its description. Throw an ApiException to make it fail.</summary>
@@ -161,6 +161,59 @@ public class WriteBehindTests : IDisposable
         await b.FlushAsync(null, default);
         Assert.All(db.Calls, c => Assert.True(int.Parse(c.Split(':')[1]) <= 3));
         Assert.Equal(10, db.Calls.Sum(c => int.Parse(c.Split(':')[1])));
+    }
+
+    [Fact]
+    public async Task Mongo_receipts_are_not_merged_because_bulk_inserts_can_partially_commit()
+    {
+        db.Name = "mongodb";
+        var b = Buffer();
+        await b.EnqueueAsync("insert", "demo", Insert("alice"), default);
+        await b.EnqueueAsync("insert", "demo", Insert("bob"), default);
+        await b.FlushAsync(null, default);
+        Assert.Equal(["insert:1", "insert:1"], db.Calls);
+    }
+
+    [Fact]
+    public async Task A_failed_drain_refuses_to_continue_and_keeps_older_writes()
+    {
+        var b = Buffer(o => o.OnError = WriteBehindErrorMode.Stop);
+        await b.EnqueueAsync("insert", "demo", Insert("alice"), default);
+        db.Intercept = (_, _) => throw new ApiException(409, "constraint_violation", "duplicate");
+        var error = await Assert.ThrowsAsync<ApiException>(() => b.DrainAsync("demo", default));
+        Assert.Equal("write_buffer_halted", error.Code);
+        Assert.Equal(1, b.Pending("demo"));
+    }
+
+    [Fact]
+    public async Task Schema_invalidation_rejects_writes_for_a_removed_table_immediately()
+    {
+        var b = Buffer();
+        await b.EnqueueAsync("insert", "demo", Insert("alice"), default);
+        await b.DrainAsync("demo", default);
+        db.Schema = new SchemaDefinition([]);
+        b.InvalidateSchema("demo");
+        var error = await Assert.ThrowsAsync<ApiException>(() => b.EnqueueAsync("insert", "demo", Insert("bob"), default));
+        Assert.Equal(404, error.Status);
+        Assert.Equal(0, b.Pending());
+    }
+
+    [Fact]
+    public async Task Namespace_requests_wait_for_an_in_progress_schema_change()
+    {
+        var b = Buffer();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = b.RunNamespaceAsync("demo", async () => { entered.SetResult(); await release.Task; return new object(); }, default);
+        await entered.Task;
+        var ran = false;
+        var second = b.RunNamespaceAsync("demo", () => { ran = true; return Task.FromResult<object>(new object()); }, default);
+        Assert.False(ran);
+        // Another namespace is independent.
+        await b.RunNamespaceAsync("other", () => Task.FromResult<object>(new object()), default);
+        release.SetResult();
+        await Task.WhenAll(first, second);
+        Assert.True(ran);
     }
 
     [Fact]
@@ -497,5 +550,38 @@ public class WriteBehindPipelineTests
         var sync = await h.SendAsync("/v1/schema/sync", new { @namespace = "demo", schema = new { tables = new object[] { } } });
         Assert.Equal(HttpStatusCode.OK, sync.Status);
         Assert.Equal(["insert", "sync:demo"], h.Provider.Calls);
+    }
+
+    [Theory]
+    [InlineData("/v1/data/insert")]
+    [InlineData("/v1/data/find")]
+    [InlineData("/v1/schema/sync")]
+    public async Task A_halted_flush_blocks_immediate_writes_consistent_reads_and_schema_changes(string path)
+    {
+        using var h = Harness(e => {
+            e["LDB_Ldb__WriteBehind__OnError"] = "Stop";
+            e["LDB_Ldb__WriteBehind__FlushBeforeRead"] = "true";
+        });
+        await h.SendAsync("/v1/data/insert", JsonSerializer.Deserialize<JsonElement>(InsertPayload));
+        h.Provider.BeforeInsert = () => throw new ApiException(409, "constraint_violation", "duplicate");
+        object payload = path == "/v1/schema/sync"
+            ? new { @namespace = "demo", schema = new { tables = new object[] { } } }
+            : new { @namespace = "demo", table = "players", rows = new[] { new { name = "bob" } }, durability = "immediate" };
+        var result = await h.SendAsync(path, payload);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, result.Status);
+        Assert.Equal("write_buffer_halted", result.Body!.Code);
+        Assert.Empty(h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task A_schema_sync_invalidates_the_validation_cache()
+    {
+        using var h = Harness();
+        await h.SendAsync("/v1/data/insert", JsonSerializer.Deserialize<JsonElement>(InsertPayload));
+        await h.SendAsync("/v1/schema/sync", new { @namespace = "demo", schema = new { tables = new object[] { } } });
+        var result = await h.SendAsync("/v1/data/insert", JsonSerializer.Deserialize<JsonElement>(InsertPayload));
+        Assert.Equal(HttpStatusCode.NotFound, result.Status);
+        var health = await h.SendAsync("/v1/health", new { });
+        Assert.Contains("\"pending\":0", health.Body!.Payload);
     }
 }

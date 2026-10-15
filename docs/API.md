@@ -185,6 +185,7 @@ guarantees and failure handling: [WRITE-BEHIND.md](WRITE-BEHIND.md). `POST /v1/h
 | 409 | `destructive_denied`, `data_does_not_fit`, `unsupported_change`, `sync_in_progress`, `conflict_retry` | Schema sync refused or busy |
 | 413 | `payload_too_large`, `too_many_rows` | Limits exceeded |
 | 503 | `write_buffer_full`, `write_buffer_unavailable` | Write-behind queue is full or its journal cannot be written; the write was not accepted |
+| 503 | `write_buffer_halted` | A prerequisite flush could not drain older writes; immediate write, schema change or consistent read was blocked |
 | 422 | `idempotency_conflict` | Idempotency key reused with another payload |
 | 429 | `rate_limited` | Per-key, per-address or lock-out limit |
 | 500 / 504 | `database_error`, `internal_error`, `database_timeout`, `timeout` | Server side; details are only in the log |

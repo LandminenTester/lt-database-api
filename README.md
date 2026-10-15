@@ -92,6 +92,8 @@ with the prefix `LDB_` and `__` as separator (`LDB_Ldb__Database__Provider=mysql
 
 ## Documentation
 
+Public documentation for all three products: [LandminenTester Docs](https://landminentester.github.io/docs/).
+
 | Document | Contents |
 |---|---|
 | [docs/API.md](docs/API.md) | Every endpoint, request and response shape, the filter language, error codes |
@@ -100,7 +102,8 @@ with the prefix `LDB_` and `__` as separator (`LDB_Ldb__Database__Provider=mysql
 | [docs/SECURITY.md](docs/SECURITY.md) | The signing protocol, threat model, hardening checklist, database privileges, key rotation |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, Windows service, systemd, reverse proxy with TLS, configuration reference, backups, monitoring |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the code is organised and how to add a database engine |
-| [docs/BUNDLE-INTEGRATION.md](docs/BUNDLE-INTEGRATION.md) | Writing your own client; using it from a Replay.RE BlackICE bundle (companion bundle: [lt_database](https://github.com/LandminenTester/lt-database)) |
+| [docs/BUNDLE-INTEGRATION.md](docs/BUNDLE-INTEGRATION.md) | Writing your own client; using it from a Replay.RE BlackICE bundle (companion bundle: [lt-database](https://github.com/LandminenTester/lt-database)) |
+| [docs/BUILD.md](docs/BUILD.md) | Build, test, package, release and maintain the API |
 | [docs/openapi.yaml](docs/openapi.yaml) | OpenAPI 3.1 description of the endpoints |
 
 ## Security in one paragraph

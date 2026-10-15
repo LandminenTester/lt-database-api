@@ -18,12 +18,19 @@ jobs:
           dotnet-version: 10.0.x
       - name: Test
         run: dotnet test -c Release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r tools/requirements-docs.txt
+      - run: python3 -m openapi_spec_validator docs/openapi.yaml
+      - run: python3 -m unittest discover -s tools -p 'test_*.py'
       - name: Publish
         run: |
           mkdir dist
           for rid in linux-x64 linux-arm64 win-x64; do
             dotnet publish src/Ldb.Api -c Release -r $rid --self-contained -p:PublishSingleFile=true -p:DebugType=None -o out/$rid
-            cp README.md LICENSE out/$rid/
+            cp README.md LICENSE SECURITY.md CHANGELOG.md out/$rid/
+            cp -r docs tools out/$rid/
             if [ "$rid" = "win-x64" ]; then (cd out/$rid && zip -r ../../dist/lt-database-api-$rid.zip .)
             else tar -C out/$rid -czf dist/lt-database-api-$rid.tar.gz .; fi
           done

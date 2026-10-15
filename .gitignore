@@ -12,3 +12,4 @@ coverage/
 *.secret
 appsettings.Production.json
 appsettings.Local.json
+__pycache__/

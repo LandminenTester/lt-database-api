@@ -46,13 +46,17 @@ def call(base_url: str, key_id: str, secret: str, endpoint: str, payload: str, o
     except urllib.error.HTTPError as error:  # the API answers errors with a JSON envelope too
         status, body = error.code, error.read()
     answer = json.loads(body)
+    if answer.get("status") != status:
+        raise SystemExit("The response status does not match HTTP. Do not trust this answer.")
 
     signed = answer.get("sig")
     if signed:
         expected = mac(secret.encode(), "\n".join(["v1resp", nonce, str(answer["status"]), answer["payload"]]))
         if not hmac.compare_digest(expected, signed):
             raise SystemExit("The response signature is wrong. Do not trust this answer.")
-    elif status != 200:
+    elif status < 400:
+        raise SystemExit("The successful response is unsigned. Do not trust this answer.")
+    else:
         print("(unsigned error - the request was not authenticated)", file=sys.stderr)
     return status, answer
 

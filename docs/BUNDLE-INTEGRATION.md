@@ -38,8 +38,9 @@ BlackICE server components run in a sandbox. The facts that shape this API (from
 * A bundle's `vfs/` folder is a private, plain-file area on the server and is never streamed to clients. It is where the connector
   bundle reads its key secret from. File permissions on the game server are the only protection, so lock them down.
 
-The companion bundle **`lt_database`** wraps all of this: other server bundles call its exports (`Sync`, `Insert`, `Find`,
-`Update`, `Upsert`, `Delete`, `Count`) and never see a key, a URL or an HTTP response. It has no client component, so players have
+The companion bundle [**lt-database**](https://github.com/LandminenTester/lt-database) (default folder `lt_database`)
+wraps all of this: other server bundles call its exports (`Sync`, `Insert`, `Find`,
+`Update`, `Upsert`, `Delete`, `Count`, `Flush`) and never see a key, a URL or an HTTP response. It has no client component, so players have
 nothing to call. See that repository's README for installation and the export reference.
 
 Quick setup of the pair:
@@ -48,3 +49,8 @@ Quick setup of the pair:
 2. In the bundle's `config.toml` allow the API host under `[Networking]`.
 3. Put the secret into the bundle's `vfs/` folder as described in the bundle README and set the API URL and key id.
 4. From your own bundle, declare your tables once at start-up with `Sync` and use the other exports at runtime.
+
+The [public bundle guide](https://landminentester.github.io/docs/lt-database/docs/USAGE/) includes compiled C# examples.
+When write-behind is enabled on the API, check `Db.IsQueued(result)` before expecting generated IDs or row counts.
+`Db.Flush(ns, done)` waits for a flush; every write helper accepts `immediate: true`. Check flush `halted` and `remaining`
+before depending on the queued writes. See [Write-behind](WRITE-BEHIND.md).

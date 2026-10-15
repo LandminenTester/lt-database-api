@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using System.Text;
 using System.Text.Json;
@@ -31,7 +32,8 @@ public sealed class WriteBuffer
     readonly object gate = new();
     readonly List<PendingWrite> queue = [];
     readonly SemaphoreSlim flushLock = new(1, 1);
-    readonly Dictionary<string, (SchemaDefinition Schema, DateTimeOffset At)> schemas = new();
+    readonly ConcurrentDictionary<string, (SchemaDefinition Schema, DateTimeOffset At)> schemas = new();
+    readonly ConcurrentDictionary<string, SemaphoreSlim> namespaceLocks = new();
     readonly HashSet<string> operations;
     long queuedBytes;
     bool anyJournalWrites;
@@ -49,6 +51,24 @@ public sealed class WriteBuffer
     public bool Enabled => options.Enabled;
     public bool FlushBeforeRead => options.Enabled && options.FlushBeforeRead;
     public WriteBehindOptions Options => options;
+
+    // Keep a schema change, its drain, and concurrent requests of that namespace in one ordered section.
+    public async Task<object> RunNamespaceAsync(string ns, Func<Task<object>> action, CancellationToken ct)
+    {
+        var mutex = namespaceLocks.GetOrAdd(ns, _ => new SemaphoreSlim(1, 1));
+        await mutex.WaitAsync(ct);
+        try { return await action(); }
+        finally { mutex.Release(); }
+    }
+
+    public void InvalidateSchema(string ns) => schemas.TryRemove(ns, out _);
+
+    public async Task DrainAsync(string ns, CancellationToken ct)
+    {
+        var result = await FlushAsync(ns, ct);
+        if (result.Halted || Pending(ns) > 0)
+            throw new ApiException(503, "write_buffer_halted", "Older writes could not be applied. Resolve the pending writes before continuing.");
+    }
     public DateTimeOffset LastFlush { get; private set; }
     public bool Halted { get; private set; }
 
@@ -109,7 +129,7 @@ public sealed class WriteBuffer
         if (schemas.TryGetValue(ns, out var hit) && time.GetUtcNow() - hit.At < SchemaTtl) return hit.Schema;
         var d = await provider.DescribeAsync(ns, ct);
         var schema = d.Schema ?? throw new ApiException(404, "namespace_unknown", "This namespace has no schema yet. Run a schema sync first.");
-        lock (schemas) schemas[ns] = (schema, time.GetUtcNow());
+        schemas[ns] = (schema, time.GetUtcNow());
         return schema;
     }
 
@@ -154,7 +174,9 @@ public sealed class WriteBuffer
     {
         var first = work[start];
         var group = new List<PendingWrite> { first };
-        if (first.Operation != "insert") return group;
+        // MongoDB ordered bulk inserts can partially commit before a duplicate-key error. Splitting and replaying such
+        // a merged group would repeat successful writes. Keep separate receipts in separate provider calls.
+        if (first.Operation != "insert" || provider.Name == "mongodb") return group;
         var head = ParseInsert(first);
         var rows = head.Rows.Count;
         for (var j = start + 1; j < work.Count; j++)

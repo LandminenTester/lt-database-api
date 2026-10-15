@@ -97,7 +97,10 @@ public sealed class RequestPipeline(
 
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
                 timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(5, o.Database.CommandTimeoutSeconds * 4)));
-                var result = await op.Run(env.Payload, new OperationContext(provider, o, key, writeBuffer), timeout.Token);
+                var operationContext = new OperationContext(provider, o, key, writeBuffer);
+                var result = writeBuffer.Enabled && op.UsesNamespace
+                    ? await writeBuffer.RunNamespaceAsync(ns, () => op.Run(env.Payload, operationContext, timeout.Token), timeout.Token)
+                    : await op.Run(env.Payload, operationContext, timeout.Token);
                 var payload = Json.Write(result);
                 if (cacheKey is not null) idempotency.Store(cacheKey, payloadHash, 200, payload, now.UtcTicks);
                 status = 200;
