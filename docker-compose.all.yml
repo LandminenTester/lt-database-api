@@ -1,0 +1,76 @@
+# Runs the API against all three engines at once, for trying a client against each of them.
+# Local testing only: plain HTTP on loopback, throw-away databases, secrets from .env.
+#
+#   docker compose -f docker-compose.all.yml up -d --build
+#
+#   PostgreSQL  http://127.0.0.1:8081      MySQL  http://127.0.0.1:8082      MongoDB  http://127.0.0.1:8083
+#
+# The databases themselves are published on 15432 / 13307 / 27018 so they do not collide with local installations.
+
+x-api: &api
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  read_only: true
+  tmpfs: [ /tmp ]
+  cap_drop: [ALL]
+  security_opt: [ "no-new-privileges:true" ]
+  restart: unless-stopped
+  environment: &api-env
+    LDB_Ldb__Security__AllowInsecureHttp: "true"
+    LDB_Ldb__Security__Keys__0__KeyId: ${LDB_KEY_ID:-gameserver}
+    LDB_Ldb__Security__Keys__0__Current: env:LDB_KEY_MAIN
+    LDB_Ldb__Security__Keys__0__AllowedNamespaces__0: "*"
+    LDB_KEY_MAIN: ${LDB_KEY_MAIN:?copy .env.example to .env first}
+
+services:
+  api-postgres:
+    <<: *api
+    ports: [ "127.0.0.1:8081:8080" ]
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      <<: *api-env
+      LDB_Ldb__Database__Provider: postgres
+      LDB_Ldb__Database__DmlConnectionString: "Host=postgres;Database=ldb;Username=ldb;Password=${DB_PASSWORD:?}"
+  postgres:
+    image: postgres:17-alpine
+    environment: { POSTGRES_DB: ldb, POSTGRES_USER: ldb, POSTGRES_PASSWORD: "${DB_PASSWORD:?}" }
+    ports: [ "127.0.0.1:15432:5432" ]
+    healthcheck: { test: [ "CMD-SHELL", "pg_isready -U ldb -d ldb" ], interval: 3s, timeout: 3s, retries: 30 }
+    volumes: [ "all-postgres:/var/lib/postgresql/data" ]
+
+  api-mysql:
+    <<: *api
+    ports: [ "127.0.0.1:8082:8080" ]
+    depends_on: { mysql: { condition: service_healthy } }
+    environment:
+      <<: *api-env
+      LDB_Ldb__Database__Provider: mysql
+      LDB_Ldb__Database__DmlConnectionString: "Server=mysql;Database=ldb;User ID=ldb;Password=${DB_PASSWORD:?}"
+  mysql:
+    image: mysql:8.4
+    environment: { MYSQL_DATABASE: ldb, MYSQL_USER: ldb, MYSQL_PASSWORD: "${DB_PASSWORD:?}", MYSQL_ROOT_PASSWORD: "${DB_PASSWORD:?}" }
+    ports: [ "127.0.0.1:13307:3306" ]
+    healthcheck: { test: [ "CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uldb", "-p${DB_PASSWORD}" ], interval: 5s, timeout: 5s, retries: 40 }
+    volumes: [ "all-mysql:/var/lib/mysql" ]
+
+  api-mongodb:
+    <<: *api
+    ports: [ "127.0.0.1:8083:8080" ]
+    depends_on: { mongodb: { condition: service_healthy } }
+    environment:
+      <<: *api-env
+      LDB_Ldb__Database__Provider: mongodb
+      LDB_Ldb__Database__MongoDatabase: ldb
+      LDB_Ldb__Database__DmlConnectionString: "mongodb://ldb:${DB_PASSWORD:?}@mongodb:27017/?authSource=admin"
+  mongodb:
+    image: mongo:8.0
+    environment: { MONGO_INITDB_ROOT_USERNAME: ldb, MONGO_INITDB_ROOT_PASSWORD: "${DB_PASSWORD:?}" }
+    ports: [ "127.0.0.1:27018:27017" ]
+    healthcheck: { test: [ "CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')" ], interval: 5s, timeout: 5s, retries: 30 }
+    volumes: [ "all-mongo:/data/db" ]
+
+volumes:
+  all-postgres:
+  all-mysql:
+  all-mongo:
