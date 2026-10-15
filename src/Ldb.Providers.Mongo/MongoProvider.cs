@@ -141,13 +141,20 @@ public sealed class MongoProvider : IDatabaseProvider
             props[FieldOf(t, c.Name)] = spec;
             if (!c.Nullable && c.Default is null && !c.AutoIncrement && FieldOf(t, c.Name) != "_id") required.Add(c.Name);
         }
-        var schema = new BsonDocument { { "bsonType", "object" }, { "properties", props }, { "additionalProperties", false } };
+        // Fields parked by Quarantine mode (_dropped_*) stay legal; anything else that is not declared is refused.
+        var schema = new BsonDocument { { "bsonType", "object" }, { "properties", props }, { "patternProperties", new BsonDocument("^_dropped_", new BsonDocument()) }, { "additionalProperties", false } };
         if (required.Count > 0) schema["required"] = required;
         return new BsonDocument("$jsonSchema", schema);
     }
 
     Task ApplyValidatorAsync(string phys, TableDefinition t, CancellationToken ct) =>
         admin.RunCommandAsync<BsonDocument>(new BsonDocument { { "collMod", phys }, { "validator", Validator(t) }, { "validationLevel", "moderate" }, { "validationAction", "error" } }, cancellationToken: ct);
+
+    async Task SetValidationLevelAsync(string phys, string level, CancellationToken ct)
+    {
+        if (!await CollectionExistsAsync(phys, ct)) return;
+        await admin.RunCommandAsync<BsonDocument>(new BsonDocument { { "collMod", phys }, { "validationLevel", level } }, cancellationToken: ct);
+    }
 
     async Task<bool> CollectionExistsAsync(string phys, CancellationToken ct)
     {
@@ -186,8 +193,24 @@ public sealed class MongoProvider : IDatabaseProvider
             }
             if (dryRun) return new SyncResult(ns, hash, true, true, "planned", ops);
 
-            foreach (var op in ops) await ApplyAsync(ns, op, mode, ct);
-            foreach (var t in desired.Tables) await ApplyValidatorAsync(Names.Physical(ns, t.Name), t, ct);
+            // Data steps (renames, back-fills) move documents through states the final validator would refuse,
+            // so validation is switched off while they run and the final validators are installed afterwards.
+            foreach (var t in stored?.Tables ?? []) await SetValidationLevelAsync(Names.Physical(ns, t.Name), "off", ct);
+            try
+            {
+                foreach (var op in ops) await ApplyAsync(ns, op, mode, ct);
+                foreach (var t in desired.Tables) await ApplyValidatorAsync(Names.Physical(ns, t.Name), t, ct);
+            }
+            catch
+            {
+                // Best effort: put the previous rules back so a failed sync does not leave collections unvalidated.
+                foreach (var t in stored?.Tables ?? [])
+                {
+                    try { if (await CollectionExistsAsync(Names.Physical(ns, t.Name), CancellationToken.None)) await ApplyValidatorAsync(Names.Physical(ns, t.Name), t, CancellationToken.None); }
+                    catch (MongoException) { logger.LogWarning("Could not restore the validator of a collection after a failed sync"); }
+                }
+                throw;
+            }
 
             var doc = new BsonDocument { { "_id", ns }, { "hash", hash }, { "definition", Json.Write(SchemaHasher.Canonicalize(desired)) }, { "updated_at", DateTime.UtcNow.ToString("O") } };
             await admin.GetCollection<BsonDocument>(MetaCollection).ReplaceOneAsync(new BsonDocument("_id", ns), doc, new ReplaceOptions { IsUpsert = true }, ct);
@@ -502,7 +525,7 @@ public sealed class MongoProvider : IDatabaseProvider
 
     public async Task<AffectedResult> UpsertAsync(UpsertRequest r, CancellationToken ct) => await Guard(async () =>
     {
-        var (t, col, _) = await ResolveAsync(r.Namespace, r.Table, ct);
+        var (t, col, phys) = await ResolveAsync(r.Namespace, r.Table, ct);
         if (r.Keys is null || r.Keys.Count == 0) throw new ApiException(400, "invalid_request", "Provide the key columns of the upsert.");
         var keys = r.Keys.Distinct().ToList();
         foreach (var k in keys) Column(t, k);
@@ -510,7 +533,7 @@ public sealed class MongoProvider : IDatabaseProvider
         if (!isKey) throw new ApiException(400, "invalid_request", "The keys must match the primary key or a unique index exactly.");
         if (r.Row.ValueKind != JsonValueKind.Object) throw new ApiException(400, "invalid_request", "The row must be an object.");
 
-        var filter = new BsonDocument(); var set = new BsonDocument(); var onInsert = new BsonDocument();
+        var filter = new BsonDocument(); var set = new BsonDocument();
         var given = new HashSet<string>();
         foreach (var prop in r.Row.EnumerateObject())
         {
@@ -521,24 +544,20 @@ public sealed class MongoProvider : IDatabaseProvider
             else if (t.PrimaryKey?.Contains(c.Name) != true) set[c.Name] = value;
         }
         foreach (var k in keys) if (!given.Contains(k)) throw new ApiException(400, "missing_value", $"The row needs a value for key column '{k}'.");
-        foreach (var c in t.Columns.Where(x => !given.Contains(x.Name) && x.Default is not null && !keys.Contains(x.Name)))
-            onInsert[FieldOf(t, c.Name)] = DefaultValue(c, c.Default!.Value);
-        foreach (var c in t.Columns.Where(x => !given.Contains(x.Name) && x.Default is null && !x.Nullable && !x.AutoIncrement && !keys.Contains(x.Name)))
-            throw new ApiException(400, "missing_value", $"Column '{c.Name}' needs a value.");
 
-        var update = new BsonDocument();
-        if (set.ElementCount > 0) update["$set"] = set;
-        if (onInsert.ElementCount > 0) update["$setOnInsert"] = onInsert;
-        if (update.ElementCount == 0)
+        // Existing document: change it. New key: insert a complete document (defaults, generated ids, required checks).
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            // Nothing to change on an existing document: only insert when the key is new.
-            var fresh = new BsonDocument(filter);
-            if (!fresh.Contains("_id")) fresh["_id"] = ObjectId.GenerateNewId();
-            try { await col.InsertOneAsync(fresh, cancellationToken: ct); }
-            catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey) { }
-            return new AffectedResult(1);
+            if (set.ElementCount > 0)
+            {
+                if ((await col.UpdateOneAsync(filter, new BsonDocument("$set", set), cancellationToken: ct)).MatchedCount > 0) return new AffectedResult(1);
+            }
+            else if (await col.CountDocumentsAsync(filter, new CountOptions { Limit = 1 }, ct) > 0) return new AffectedResult(1);
+
+            var (doc, _) = await BuildDocumentAsync(t, phys, r.Row, ct);
+            try { await col.InsertOneAsync(doc, cancellationToken: ct); return new AffectedResult(1); }
+            catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey && attempt == 0) { /* lost a race: update instead */ }
         }
-        await col.UpdateOneAsync(filter, update, new UpdateOptions { IsUpsert = true }, ct);
         return new AffectedResult(1);
     });
 
