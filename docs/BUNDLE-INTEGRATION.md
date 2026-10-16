@@ -50,7 +50,7 @@ Quick setup of the pair:
 3. Put the secret into the bundle's `vfs/` folder as described in the bundle README and set the API URL and key id.
 4. From your own bundle, declare your tables once at start-up with `Sync` and use the other exports at runtime.
 
-The [public bundle guide](https://landminentester.github.io/docs/lt-database/docs/USAGE/) includes compiled C# examples.
+The [public bundle guide](https://blackice.landminentester.de/lt-database/docs/USAGE/) includes compiled C# examples.
 When write-behind is enabled on the API, check `Db.IsQueued(result)` before expecting generated IDs or row counts.
 `Db.Flush(ns, done)` waits for a flush; every write helper accepts `immediate: true`. Check flush `halted` and `remaining`
 before depending on the queued writes. See [Write-behind](WRITE-BEHIND.md).

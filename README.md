@@ -92,7 +92,7 @@ with the prefix `LDB_` and `__` as separator (`LDB_Ldb__Database__Provider=mysql
 
 ## Documentation
 
-Browse the public [BlackICE resource library](https://landminentester.github.io/docs/) for guides and references.
+Browse the public [BlackICE resource library](https://blackice.landminentester.de/) for guides and references.
 
 | Document | Contents |
 |---|---|
