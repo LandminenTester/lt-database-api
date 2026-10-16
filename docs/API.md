@@ -4,6 +4,10 @@ All operations use the signed envelope described in [SECURITY.md](SECURITY.md#th
 **payload** (the string inside `payload`) of each operation and the **result** (the string inside the response's `payload`).
 A machine-readable summary is in [openapi.yaml](openapi.yaml).
 
+## Start with a complete client
+
+An **endpoint** is an HTTP method and path; a **payload** is the operation's data inside the signed message. The JSON snippets below show payloads, not unsigned HTTP request bodies. Use the [reference client](BUNDLE-INTEGRATION.md) or the connector's [explained C# walkthrough](https://blackice.landminentester.de/lt-database/docs/EXAMPLES/) for a first working call. The [glossary](https://blackice.landminentester.de/glossary/) explains short names. `inc` means increment: add to the existing numeric value; `set` replaces it.
+
 ## Conventions
 
 * JSON, UTF-8, `camelCase` property names. Unknown properties in a payload are ignored; wrong types are rejected.

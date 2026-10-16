@@ -39,8 +39,8 @@ BlackICE server components run in a sandbox. The facts that shape this API (from
   bundle reads its key secret from. File permissions on the game server are the only protection, so lock them down.
 
 The companion bundle [**lt_database**](https://github.com/LandminenTester/lt-database) (folder `lt_database`)
-wraps all of this: other server bundles call its exports (`Sync`, `Insert`, `Find`,
-`Update`, `Upsert`, `Delete`, `Count`, `Flush`) and never see a key, a URL or an HTTP response. It has no client component, so players have
+wraps all of this: other server bundles use its C# helper methods (`Sync`, `Insert`, `Find`,
+`Update`, `Upsert`, `Delete`, `Count`, `Flush`), which call the `Call` and `TakeResult` exports and never see a key, a URL or an HTTP response. It has no client component, so players have
 nothing to call. See that repository's README for installation and the export reference.
 
 Quick setup of the pair:

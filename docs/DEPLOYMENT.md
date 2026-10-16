@@ -171,8 +171,7 @@ the file ACLs of the folder and secret files to the service account and administ
 
 * **Probes:** `GET /healthz` (process is up), `GET /readyz` (database reachable, returns 503 otherwise).
 * **Logs:** JSON lines on stdout. Look for `audit` lines per request.
-* **Backups:** back up the database. The API holds no state except caches. Structure is also recoverable from the caller's
-  own declaration, but data is not.
+* **Backups:** back up the database. Without write-behind the API holds no local state except caches. When buffering is enabled, also protect and back up pending journals and dead letters. Structure is recoverable from the caller's declaration, but data is not.
 * **Upgrades:** replace the binary or image and restart. Schema bookkeeping tables are forward compatible.
 * **Rotating a secret:** see [SECURITY.md](SECURITY.md#key-management).
 * **Several instances:** possible, but nonce and idempotency caches are per instance; use sticky routing per key.
