@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+Documentation only: the bundle integration guide now explains the alternative `re.sql` backend of the lt_database connector (0.3.0)
+and when to choose the API instead. The HTTP protocol and runtime behavior are unchanged.
+
 ## 0.1.1
 
 Update client documentation to use the lt_database bundle identity and its LtDatabase / LtDatabaseClient C# namespaces.

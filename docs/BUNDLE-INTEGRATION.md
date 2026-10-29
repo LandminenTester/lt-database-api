@@ -22,7 +22,8 @@ the original result instead of a second write.
 
 ## Replay.RE BlackICE bundles
 
-BlackICE server components run in a sandbox. The facts that shape this API (from the SDK 1.1.0 index and
+BlackICE server components run in a sandbox. The facts that shape this API (from the SDK 1.1.0 index; SDK 1.3.0 added `re.sql`, see
+[below](#api-or-resql-which-one), and
 [docs.replay.re](https://docs.replay.re/ugc/authoring/script-api/)):
 
 * The only outbound channel is `re.net.Http.Get(url, headers?, timeoutMs)` and `re.net.Http.Post(url, body, headers?, timeoutMs)`.
@@ -42,6 +43,20 @@ The companion bundle [**lt_database**](https://github.com/LandminenTester/lt-dat
 wraps all of this: other server bundles use its C# helper methods (`Sync`, `Insert`, `Find`,
 `Update`, `Upsert`, `Delete`, `Count`, `Flush`), which call the `Call` and `TakeResult` exports and never see a key, a URL or an HTTP response. It has no client component, so players have
 nothing to call. See that repository's README for installation and the export reference.
+
+### API or `re.sql`: which one?
+
+Since version 0.3.0 the **lt_database** bundle can also talk to PostgreSQL or SQLite directly through the host's `re.sql` provider
+(`"backend": "sql"` in its `vfs/database.json`, SDK 1.3.0 or newer) without this API. Consumers see the same exports, requests, results and
+error codes, and the schema hash and the receipt fingerprint are identical, so a database created through this API can be taken over by
+the `sql` backend and back (never both at once on the same namespaces).
+
+Use **this API** when
+several game servers share one database, you use MySQL, MariaDB or MongoDB, you want write-behind, or the game server host must not hold
+database credentials (the bundle only holds a key limited to its namespaces and address).
+Use **`re.sql`** when one game server is enough, you want nothing else to run (SQLite is a file), or you are developing and testing.
+The connector's guide [Choosing a backend and settings](https://blackice.landminentester.de/lt-database/docs/USE-CASES/) compares both with
+use cases, and [SQL backend](https://blackice.landminentester.de/lt-database/docs/SQL-BACKEND/) lists every difference.
 
 Quick setup of the pair:
 

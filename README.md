@@ -10,7 +10,8 @@ trusted clients one simple, engine-independent way to:
 * **read, write, update and delete data** through a small, injection-proof query language.
 
 It was written for game-server bundles (the [Replay.RE BlackICE](https://docs.replay.re) sandbox can only talk to the
-outside world over HTTP and cannot open database connections), but nothing in it is game specific: any server-side
+outside world over HTTP; since SDK 1.3.0 it can also reach PostgreSQL and SQLite itself through the host's `re.sql` provider, see
+[BUNDLE-INTEGRATION](docs/BUNDLE-INTEGRATION.md#api-or-resql-which-one)), but nothing in it is game specific: any server-side
 program that can send an HTTP POST and compute an HMAC can use it.
 
 ```
